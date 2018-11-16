@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"fmt"
@@ -10,11 +11,16 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/jinzhu/now"
+	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 )
+
+type readwrite struct {
+	r aws.WriteAtBuffer
+}
 
 type Request struct {
 	Bucket string `json:"bucketname"`
@@ -22,6 +28,16 @@ type Request struct {
 }
 
 func HandleRequest(ctx context.Context, req Request) {
+
+	//TODO: https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/go/example_code/s3/upload_arbitrary_sized_stream.go
+	// https://docs.aws.amazon.com/sdk-for-go/api/aws/#WriteAtBuffer
+	// https://docs.aws.amazon.com/sdk-for-go/api/service/s3/s3manager/#UploadInput
+	// https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/go/example_code/lambda/aws-go-sdk-lambda-example-create-function.go
+	// https://stackoverflow.com/questions/37469912/how-to-use-less-memory-when-sending-large-files-to-amazon-s3-via-golang-sdk
+	// https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#putObject-property
+	// https://stackoverflow.com/questions/43595911/how-to-save-data-streams-in-s3-aws-sdk-go-example-not-working
+	// https://github.com/minio/minio-go/blob/master/examples/s3/putobject.go
+	// https://gist.github.com/ehernandez-xk/e151b69f5734c8e2d7e7347d79966bb9
 
 	fname := req.File
 	bname := req.Bucket
@@ -50,16 +66,16 @@ func HandleRequest(ctx context.Context, req Request) {
 		log.Println("created outfile " + outFile.Name())
 	}
 
-	log.Println("files created, setting permissions")
-	if err := inFile.Chmod(777); err != nil {
-		log.Fatal(err)
-	} else {
-		if err := outFile.Chmod(777); err != nil {
-			log.Fatal(err)
-		} else {
-			log.Println("successfully set permissions")
-		}
-	}
+	//log.Println("files created, setting permissions")
+	//if err := inFile.Chmod(777); err != nil {
+	//	log.Fatal(err)
+	//} else {
+	//	if err := outFile.Chmod(777); err != nil {
+	//		log.Fatal(err)
+	//	} else {
+	//		log.Println("successfully set permissions")
+	//	}
+	//}
 	defer inFile.Close()
 	defer outFile.Close()
 
@@ -70,14 +86,15 @@ func HandleRequest(ctx context.Context, req Request) {
 			Bucket: aws.String(bname),
 			Key:    aws.String(fname),
 		})
+	//log
 	if err != nil {
 		exitErrorf("Unable to download item %q, %v", fname, err)
 	} else {
 		log.Println("Sucessfully downloaded  ", numBytes, "byte file... attempting read...")
-
 	}
 
 	rows, err := csv.NewReader(inFile).ReadAll()
+	//log
 	if err != nil {
 		log.Fatal(err)
 		exitErrorf("Unable to open ", outFile, " %q, %v", err)
@@ -85,7 +102,6 @@ func HandleRequest(ctx context.Context, req Request) {
 		log.Println("Successfully read CSV file")
 		log.Println("CSV READING CHECK: ", rows[0][0])
 	}
-
 	log.Println("Processing CSV file ... ")
 
 	duplicates := appendCSV(rows)
@@ -110,29 +126,50 @@ func HandleRequest(ctx context.Context, req Request) {
 	log.Println("Creating S3 uploader")
 	uploader := s3manager.NewUploader(sess)
 
+	outFileBody, err := ioutil.ReadFile(outFile.Name())
+	if err != nil {
+		exitErrorf("Failed to read \"%s\" => %v", outFile.Name(), err.Error())
+	}
+
 	log.Println("uploading output file to S3")
 	_, err = uploader.Upload(&s3manager.UploadInput{
 		Bucket: aws.String(bname),
 		Key:    aws.String("outfile_" + fname),
-		Body:   outFile,
+		Body:   bytes.NewBuffer(outFileBody),
 	})
+
 	if err != nil {
 		exitErrorf("Unable to upload %q to %q, %v", fname, "outfile_"+fname, err)
 	} else {
 		log.Println("Sucessfully uploaded " + outFile.Name() + "to S3 bucket:" + bname)
 	}
+
+	err = os.Remove(inFile.Name())
+	if err != nil {
+		log.Println("error removing input file \n error: ", err)
+	}
+	err = inFile.Close()
+	if err != nil {
+		log.Println("error closing input file \n error: ", err)
+	}
+	err = outFile.Close()
+	if err != nil {
+		log.Println("error closing output file \n error: ", err)
+	}
+
 }
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
 	log.Println("System exiting due to error: " + msg)
 	os.Exit(1)
 }
+
 /** Lambda Functions above */
 func main() {
 	lambda.Start(HandleRequest)
 }
-/** CSV Processing funcs below. */
 
+/** CSV Processing funcs below. */
 
 func appendCSV(rows [][]string) int {
 	rows[0] = append(rows[0], "Order Processing Time")
@@ -199,8 +236,10 @@ func calcOrderProcessTime(row []string) string {
 	}
 	return strings.TrimRight(end.Sub(start).String(), "0m0s")
 }
+
 /** function for testing locally outside of lambda */
 func testmain() {
+
 	rows := [][]int{
 		{0, 1, 10, 3},
 		{4, 5, 6, 7},
