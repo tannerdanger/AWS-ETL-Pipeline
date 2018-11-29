@@ -18,16 +18,21 @@ import (
 	"strings"
 )
 
-type readwrite struct {
-	r aws.WriteAtBuffer
-}
-
 type Request struct {
 	Bucket string `json:"bucketname"`
 	File   string `json:"filename"`
 }
 
-func HandleRequest(ctx context.Context, req Request) {
+type Response struct {
+	Success bool   `json:"success"`
+	Bucket  string `json:"bucketname"`
+	FileIn  string `json:"input_filename"`
+	FileOut string `json:"exported_filename"`
+	Error   string `json:"error"`
+	Deleted int    `json:"deleted_duplicates"`
+}
+
+func HandleRequest(ctx context.Context, req Request) (Response, error) {
 
 	//TODO: https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/go/example_code/s3/upload_arbitrary_sized_stream.go
 	// https://docs.aws.amazon.com/sdk-for-go/api/aws/#WriteAtBuffer
@@ -41,6 +46,8 @@ func HandleRequest(ctx context.Context, req Request) {
 
 	fname := req.File
 	bname := req.Bucket
+	success := false
+
 	log.Println("Finding:", fname, "  From bucket:", bname)
 
 	//create sessions
@@ -76,6 +83,7 @@ func HandleRequest(ctx context.Context, req Request) {
 	//		log.Println("successfully set permissions")
 	//	}
 	//}
+
 	defer inFile.Close()
 	defer outFile.Close()
 
@@ -104,19 +112,27 @@ func HandleRequest(ctx context.Context, req Request) {
 	}
 	log.Println("Processing CSV file ... ")
 
-	duplicates := appendCSV(rows)
+	duplicates := appendCSV(rows) //make changes and note number of duplicate rows
+
+	cropRows := len(rows) - duplicates //count and crop extra rows due to duplicates
+	rows = append(rows[:cropRows])
 
 	log.Println("Done. Deleted ", duplicates, " duplicate rows... \n writing to output file")
 	log.Println("CSV READING CHECK: ", rows[0][0])
+	//r := len(rows)
+	//log.Println("CSV READING CHECK LAST ROW: ", rows[0][0])
 
 	//err = csv.NewWriter(outFile).WriteAll(rows)
 	writer := csv.NewWriter(outFile)
-	for _, row := range rows {
-		err := writer.Write(row)
-		if nil != err {
-			log.Println("error writing row... err: ", err)
-		}
-	}
+	writer.WriteAll(rows)
+
+	//
+	//for _, row := range rows {
+	//	err := writer.Write(row)
+	//	if nil != err {
+	//		log.Println("error writing row... err: ", err)
+	//	}
+	//}
 
 	if err != nil {
 		log.Fatal(err)
@@ -142,6 +158,7 @@ func HandleRequest(ctx context.Context, req Request) {
 		exitErrorf("Unable to upload %q to %q, %v", fname, "outfile_"+fname, err)
 	} else {
 		log.Println("Sucessfully uploaded " + outFile.Name() + "to S3 bucket:" + bname)
+		success = true
 	}
 
 	err = os.Remove(inFile.Name())
@@ -156,7 +173,12 @@ func HandleRequest(ctx context.Context, req Request) {
 	if err != nil {
 		log.Println("error closing output file \n error: ", err)
 	}
+	errStr := "No Errors"
+	if err != nil {
+		errStr = err.Error()
+	}
 
+	return Response{Success: success, Bucket: bname, FileIn: fname, FileOut: "outfile_" + fname, Error: errStr, Deleted: duplicates}, err
 }
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
@@ -165,8 +187,10 @@ func exitErrorf(msg string, args ...interface{}) {
 }
 
 /** Lambda Functions above */
+
 func main() {
 	lambda.Start(HandleRequest)
+	//testMainWithCSV()
 }
 
 /** CSV Processing funcs below. */
@@ -179,9 +203,9 @@ func appendCSV(rows [][]string) int {
 	i := 1
 	rowsToGo := len(rows)
 	for ; i < rowsToGo; i++ {
-		if strings.Compare(rows[i][1], "Mozambique") == 0 {
-			fmt.Print("")
-		}
+		//if strings.Compare(rows[i][1], "Mozambique") == 0 {
+		//	fmt.Print("")
+		//}
 		id := rows[i][6]
 		_, isDuplicate := orderIDs[id] //check if row is a duplicate
 		if isDuplicate {
@@ -263,4 +287,36 @@ func testmain() {
 		}
 	}
 	fmt.Println(rows)
+}
+
+func testMainWithCSV() {
+	fname := "100SalesRecords.csv"
+	inFile, err := os.Open(fname)
+	if nil != err {
+		log.Fatal(err)
+		exitErrorf("Unable to open ", inFile, " %q, %v", err)
+	} else {
+		log.Println("created infile " + inFile.Name())
+	}
+	outFile, err := os.Create("outfile.csv")
+	if nil != err {
+		log.Fatal(err)
+		exitErrorf("Unable to open ", outFile, " %q, %v", err)
+	} else {
+		log.Println("created outfile " + outFile.Name())
+	}
+
+	defer inFile.Close()
+	defer outFile.Close()
+
+	rows, err := csv.NewReader(inFile).ReadAll()
+	duplicates := appendCSV(rows)
+
+	cropRows := len(rows) - duplicates
+	rows = append(rows[:cropRows])
+
+	fmt.Println("DUPLICATES: ", duplicates)
+	writer := csv.NewWriter(outFile)
+	writer.WriteAll(rows)
+
 }
