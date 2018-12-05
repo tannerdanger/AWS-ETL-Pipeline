@@ -150,7 +150,7 @@ func HandleRequest(ctx context.Context, req Request) (Response, error) {
 	log.Println("uploading output file to S3")
 	_, err = uploader.Upload(&s3manager.UploadInput{
 		Bucket: aws.String(bname),
-		Key:    aws.String("outfile_" + fname),
+		Key:    aws.String("/transformed/" + fname),
 		Body:   bytes.NewBuffer(outFileBody),
 	})
 
@@ -178,7 +178,7 @@ func HandleRequest(ctx context.Context, req Request) (Response, error) {
 		errStr = err.Error()
 	}
 
-	return Response{Success: success, Bucket: bname, FileIn: fname, FileOut: "outfile_" + fname, Error: errStr, Deleted: duplicates}, err
+	return Response{Success: success, Bucket: bname, FileIn: fname, FileOut: fname, Error: errStr, Deleted: duplicates}, err
 }
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
