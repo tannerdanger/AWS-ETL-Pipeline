@@ -1,5 +1,5 @@
 # Microservice controller:
-![controller](https://files.slack.com/files-pri/TDCHQBP63-FEKGWMWF9/image.png "Controller")
+[controller](https://files.slack.com/files-pri/TDCHQBP63-FEKGWMWF9/image.png)
 
 
 # csv_lambda_func
