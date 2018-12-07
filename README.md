@@ -14,7 +14,7 @@ This project is intended as part of a series of microservices intended to be dep
 ```
 Or use callservice.sh with the bucket name as param 1 and filename as param 2. 
 ```Bash
-./callservice.sh 'tcss562.project.tsb' "1000SalesRecords.csv"
+./callservice.sh tcss562.project.tsb 1000SalesRecords.csv
 ```
 
 * **bucketname** -> The S3 bucket name that the input files are stored in.
