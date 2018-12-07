@@ -73,17 +73,6 @@ func HandleRequest(ctx context.Context, req Request) (Response, error) {
 		log.Println("created outfile " + outFile.Name())
 	}
 
-	//log.Println("files created, setting permissions")
-	//if err := inFile.Chmod(777); err != nil {
-	//	log.Fatal(err)
-	//} else {
-	//	if err := outFile.Chmod(777); err != nil {
-	//		log.Fatal(err)
-	//	} else {
-	//		log.Println("successfully set permissions")
-	//	}
-	//}
-
 	defer inFile.Close()
 	defer outFile.Close()
 
@@ -150,14 +139,14 @@ func HandleRequest(ctx context.Context, req Request) (Response, error) {
 	log.Println("uploading output file to S3")
 	_, err = uploader.Upload(&s3manager.UploadInput{
 		Bucket: aws.String(bname),
-		Key:    aws.String("outfile_" + fname),
+		Key:    aws.String("/transformed/" + fname),
 		Body:   bytes.NewBuffer(outFileBody),
 	})
 
 	if err != nil {
 		exitErrorf("Unable to upload %q to %q, %v", fname, "outfile_"+fname, err)
 	} else {
-		log.Println("Sucessfully uploaded " + outFile.Name() + "to S3 bucket:" + bname)
+		log.Println("Sucessfully uploaded " + "/transformed/" + fname + "to S3 bucket:" + bname)
 		success = true
 	}
 
@@ -178,7 +167,7 @@ func HandleRequest(ctx context.Context, req Request) (Response, error) {
 		errStr = err.Error()
 	}
 
-	return Response{Success: success, Bucket: bname, FileIn: fname, FileOut: "outfile_" + fname, Error: errStr, Deleted: duplicates}, err
+	return Response{Success: success, Bucket: bname, FileIn: fname, FileOut: "/transformed/" + fname, Error: errStr, Deleted: duplicates}, err
 }
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
