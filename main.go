@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -30,24 +31,18 @@ type Response struct {
 	FileOut string `json:"exported_filename"`
 	Error   string `json:"error"`
 	Deleted int    `json:"deleted_duplicates"`
+	ID      string `json:"transactionid"`
 }
 
 func HandleRequest(ctx context.Context, req Request) (Response, error) {
-
-	//TODO: https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/go/example_code/s3/upload_arbitrary_sized_stream.go
-	// https://docs.aws.amazon.com/sdk-for-go/api/aws/#WriteAtBuffer
-	// https://docs.aws.amazon.com/sdk-for-go/api/service/s3/s3manager/#UploadInput
-	// https://github.com/awsdocs/aws-doc-sdk-examples/blob/master/go/example_code/lambda/aws-go-sdk-lambda-example-create-function.go
-	// https://stackoverflow.com/questions/37469912/how-to-use-less-memory-when-sending-large-files-to-amazon-s3-via-golang-sdk
-	// https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#putObject-property
-	// https://stackoverflow.com/questions/43595911/how-to-save-data-streams-in-s3-aws-sdk-go-example-not-working
-	// https://github.com/minio/minio-go/blob/master/examples/s3/putobject.go
-	// https://gist.github.com/ehernandez-xk/e151b69f5734c8e2d7e7347d79966bb9
 
 	fname := req.File
 	bname := req.Bucket
 	success := false
 
+	lc, _ := lambdacontext.FromContext(ctx)
+
+	//var id = ctx.Value("AwsRequestID")
 	log.Println("Finding:", fname, "  From bucket:", bname)
 
 	//create sessions
@@ -108,20 +103,9 @@ func HandleRequest(ctx context.Context, req Request) (Response, error) {
 
 	log.Println("Done. Deleted ", duplicates, " duplicate rows... \n writing to output file")
 	log.Println("CSV READING CHECK: ", rows[0][0])
-	//r := len(rows)
-	//log.Println("CSV READING CHECK LAST ROW: ", rows[0][0])
 
-	//err = csv.NewWriter(outFile).WriteAll(rows)
 	writer := csv.NewWriter(outFile)
 	writer.WriteAll(rows)
-
-	//
-	//for _, row := range rows {
-	//	err := writer.Write(row)
-	//	if nil != err {
-	//		log.Println("error writing row... err: ", err)
-	//	}
-	//}
 
 	if err != nil {
 		log.Fatal(err)
@@ -167,7 +151,7 @@ func HandleRequest(ctx context.Context, req Request) (Response, error) {
 		errStr = err.Error()
 	}
 
-	return Response{Success: success, Bucket: bname, FileIn: fname, FileOut: "/transformed/" + fname, Error: errStr, Deleted: duplicates}, err
+	return Response{Success: success, Bucket: bname, FileIn: fname, FileOut: "/transformed/" + fname, Error: errStr, Deleted: duplicates, ID: lc.AwsRequestID}, err
 }
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
