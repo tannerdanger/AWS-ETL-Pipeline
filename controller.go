@@ -8,11 +8,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 const CONTENT_TYPE = "application/json"
 const TRANSFORM_ENDPOINT = "https://nkg8ojlm50.execute-api.us-east-1.amazonaws.com/Production/transform"
 const LOAD_ENDPOINT = "https://nkg8ojlm50.execute-api.us-east-1.amazonaws.com/Production/load"
+const EXTRACTION_ENDPOINT = "https://nkg8ojlm50.execute-api.us-east-1.amazonaws.com/Production/extract"
 
 //const EXTRACTION_ENDPOINT = "";
 
@@ -33,8 +35,13 @@ type Responses struct {
 	DB_file  string `json:"db_fileName"`
 	DB_table string `json:"db_tableName"`
 	//Extraction return values
-	HTTPCODE int    `json:"httpcode"`
-	DATA     string `json:"data"`
+	RESP1     map[string]interface{} `json:"response1"`
+	RESP2     map[string]interface{} `json:"response2"`
+	RESP3     map[string]interface{} `json:"response3"`
+	Timer1    time.Duration          `json:"runtime1"`
+	Timer2    time.Duration          `json:"runtime2"`
+	Timer3    time.Duration          `json:"runtime3"`
+	TotalTime time.Duration          `json:"runtimeTotal"`
 }
 
 func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
@@ -42,14 +49,6 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 	log.Println("===CONTEXT===")
 	log.Println(ctx)
 	log.Println("=============")
-
-	//var bucket string
-	//if "" == req.Bucket {
-	//	bucket = "tcss562.project.tsb"
-	//} else {
-	//	bucket = req.Bucket
-	//}
-	//inFileName := req.File;
 
 	bucket := os.Getenv("BUCKET")
 	fname := os.Getenv("FILE")
@@ -78,10 +77,12 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 	var jsonMsg = bytes.NewBuffer(jsonBytes)
 	log.Println("jsonMsg:  ", jsonMsg)
 
+	start := time.Now()
 	resp, err := http.Post(TRANSFORM_ENDPOINT, CONTENT_TYPE, jsonMsg)
 	if err != nil {
 		log.Fatal(err)
 	}
+	time1 := time.Since(start)
 
 	var result1 map[string]interface{}
 
@@ -99,6 +100,9 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 
 	} else {
 		log.Println("SUCCESSFUL FIRST CALL")
+		res.RESP1 = result1
+		res.Timer1 = time1
+
 		jsonBytes = nil
 		resp = nil
 
@@ -125,10 +129,12 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 		log.Println("finished marshalling message into json")
 		log.Println(jsonMsg)
 
+		srvicetimer := time.Now()
 		resp, err := http.Post(LOAD_ENDPOINT, CONTENT_TYPE, jsonMsg)
 		if err != nil {
 			log.Fatal(err)
 		}
+		time2 := time.Since(srvicetimer)
 		log.Println("Finished second call, checking results...")
 		log.Println(resp)
 
@@ -136,9 +142,6 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 		json.NewDecoder(resp.Body).Decode(&result2)
 
 		log.Println(result2)
-		del := result2["deleted_duplicates"]
-
-		log.Println("DELETED:", del)
 
 		if false == result2["success"] {
 			log.Println("UNSUCCESSFUL SECOND CALL")
@@ -148,6 +151,64 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 
 		} else {
 			log.Println("SUCCESSFUL SECOND CALL")
+			jsonBytes = nil
+			resp = nil
+			res.Timer2 = time2
+			res.RESP2 = result2
+
+			// ============ SECOND SERVICE CALL ============= //
+
+			log.Println("Creating second message")
+			requestmessage := map[string]interface{}{
+				"bucketName": bucket,
+				"bucktname":  bucket,
+				"filename":   fname,
+				"dbname":     DB,
+				"tablename":  TABLE,
+				"objectKey":  "loaded/" + DB,
+			}
+			log.Println("request: ", requestmessage)
+			jsonBytes, err := json.Marshal(requestmessage)
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Println(jsonBytes)
+			var jsonMsg = bytes.NewBuffer(jsonBytes)
+			log.Println("jsonMsg:  ", jsonMsg)
+
+			log.Println("THIRD CALL MESSAGE:  ", jsonMsg)
+
+			log.Println("finished marshalling message into json")
+			log.Println(jsonMsg)
+
+			srvicetimer := time.Now()
+			resp, err := http.Post(EXTRACTION_ENDPOINT, CONTENT_TYPE, jsonMsg)
+			if err != nil {
+				log.Fatal(err)
+			}
+			time3 := time.Since(srvicetimer)
+
+			log.Println("Finished third call, checking results...")
+			log.Println(resp)
+
+			var result3 map[string]interface{}
+			json.NewDecoder(resp.Body).Decode(&result3)
+
+			log.Println(result3)
+
+			if false == result3["success"] {
+				log.Println("UNSUCCESSFUL SECOND CALL")
+				//TODO: Terminate program
+				res.Success = false
+				return res, err
+			} else {
+				totaltime := time.Since(start)
+				res.TotalTime = totaltime
+				res.Timer3 = time3
+				res.Success = true
+				res.RESP3 = result3
+
+			}
 
 		}
 
