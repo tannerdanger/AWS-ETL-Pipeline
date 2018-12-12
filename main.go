@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
+	lambda2 "github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/jinzhu/now"
@@ -22,6 +24,7 @@ import (
 type Request struct {
 	Bucket string `json:"bucketname"`
 	File   string `json:"filename"`
+	ID     string `json:"transactionid"`
 }
 
 type Response struct {
@@ -32,15 +35,26 @@ type Response struct {
 	Error   string `json:"error"`
 	Deleted int    `json:"deleted_duplicates"`
 	ID      string `json:"transactionid"`
+	RunTime int    `json:runtime`
 }
 
-func HandleRequest(ctx context.Context, req Request) (Response, error) {
+//type Lambda struct {
+//	*client.Client
+//}
 
+func HandleRequest(ctx context.Context, req Request) (Response, error) {
+	var uuid = ""
 	fname := req.File
 	bname := req.Bucket
+	secondFuncName := os.Getenv("FUNCTION_NAME")
 	success := false
 
 	lc, _ := lambdacontext.FromContext(ctx)
+	if req.ID != "" {
+		uuid = req.ID
+	} else {
+		uuid = lc.AwsRequestID
+	}
 
 	//var id = ctx.Value("AwsRequestID")
 	log.Println("Finding:", fname, "  From bucket:", bname)
@@ -151,7 +165,33 @@ func HandleRequest(ctx context.Context, req Request) (Response, error) {
 		errStr = err.Error()
 	}
 
-	return Response{Success: success, Bucket: bname, FileIn: fname, FileOut: "/transformed/" + fname, Error: errStr, Deleted: duplicates, ID: lc.AwsRequestID}, err
+	if len(secondFuncName) > 0 {
+		log.Println("Calling function: ", secondFuncName)
+
+		requestmessage := map[string]interface{}{
+			"filename":      fname,
+			"transactionid": uuid,
+		}
+		jsonBytes, err := json.Marshal(requestmessage)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		lambdaFunc := lambda2.New(sess)
+		input := &lambda2.InvokeInput{
+			FunctionName: aws.String(secondFuncName),
+			Payload:      jsonBytes,
+		}
+
+		result, err := lambdaFunc.Invoke(input)
+		if err != nil {
+			log.Fatal(err)
+		} else {
+			log.Println("second func result: ", result)
+		}
+	}
+
+	return Response{Success: success, Bucket: bname, FileIn: fname, FileOut: "/transformed/" + fname, Error: errStr, Deleted: duplicates, ID: uuid}, err
 }
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
@@ -163,7 +203,7 @@ func exitErrorf(msg string, args ...interface{}) {
 
 func main() {
 	lambda.Start(HandleRequest)
-	//testMainWithCSV()
+
 }
 
 /** CSV Processing funcs below. */

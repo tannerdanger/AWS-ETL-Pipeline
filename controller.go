@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-lambda-go/lambdacontext"
 	"log"
 	"net/http"
 	"os"
@@ -25,7 +26,8 @@ type Requests struct {
 }
 
 type Responses struct {
-	Success bool `json:"success"`
+	Success bool   `json:"success"`
+	ID      string `json:"transactionid"`
 	//Transform return values
 	Bucket  string `json:"bucketname"`
 	FileIn  string `json:"input_filename"`
@@ -45,15 +47,20 @@ type Responses struct {
 }
 
 func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
+	NetClient := &http.Client{Timeout: time.Minute * 15}
+	NetClient.Timeout = time.Minute * 15
 
+	var uuid = ""
 	log.Println("===CONTEXT===")
-	log.Println(ctx)
+	lc, _ := lambdacontext.FromContext(ctx)
+	log.Println(lc)
+	uuid = lc.AwsRequestID
 	log.Println("=============")
 
 	bucket := os.Getenv("BUCKET")
-	fname := os.Getenv("FILE")
-	DB := os.Getenv("DB_NAME")
-	TABLE := os.Getenv("FILE")
+	fname := req.File
+	//DB := os.Getenv("DB_NAME")
+	//TABLE := os.Getenv("FILE")
 
 	var res = Responses{}
 
@@ -65,20 +72,19 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 	requestmessage := map[string]interface{}{
 		"bucketname": bucket,
 		"filename":   fname,
-		"dbname":     DB,
-		"tablename":  TABLE,
+		"requestid":  uuid,
 	}
-	log.Println("request: ", requestmessage)
 	jsonBytes, err := json.Marshal(requestmessage)
+
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println(jsonBytes)
+
 	var jsonMsg = bytes.NewBuffer(jsonBytes)
 	log.Println("jsonMsg:  ", jsonMsg)
 
 	start := time.Now()
-	resp, err := http.Post(TRANSFORM_ENDPOINT, CONTENT_TYPE, jsonMsg)
+	resp, err := NetClient.Post(TRANSFORM_ENDPOINT, CONTENT_TYPE, jsonMsg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -93,13 +99,12 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 	// ============ FIRST SERVICE CALL ============= //
 
 	if true != result1["success"] {
-		log.Println("UNSUCCESSFUL FIRST CALL")
+		log.Println("UNSUCCESSFUL TRANSFORM CALL")
 		//TODO: Terminate program
-
 		return res, err
 
 	} else {
-		log.Println("SUCCESSFUL FIRST CALL")
+		log.Println("SUCCESSFUL TRANSFORM CALL")
 		res.RESP1 = result1
 		res.Timer1 = time1
 
@@ -108,34 +113,29 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 
 		// ============ SECOND SERVICE CALL ============= //
 
-		log.Println("Creating second message")
+		log.Println("Creating load message")
 		requestmessage := map[string]interface{}{
-			"bucketname": bucket,
-			"filename":   fname,
-			"dbname":     DB,
-			"tablename":  TABLE,
+			"filename":      fname,
+			"transactionid": uuid,
 		}
-		log.Println("request: ", requestmessage)
+
 		jsonBytes, err := json.Marshal(requestmessage)
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Println(jsonBytes)
-		var jsonMsg = bytes.NewBuffer(jsonBytes)
-		log.Println("jsonMsg:  ", jsonMsg)
 
-		log.Println("SECOND CALL MESSAGE:  ", jsonMsg)
+		var jsonMsg = bytes.NewBuffer(jsonBytes)
 
 		log.Println("finished marshalling message into json")
-		log.Println(jsonMsg)
+		log.Println("LOAD MESSAGE:  ", jsonMsg)
 
 		srvicetimer := time.Now()
-		resp, err := http.Post(LOAD_ENDPOINT, CONTENT_TYPE, jsonMsg)
+		resp, err := NetClient.Post(LOAD_ENDPOINT, CONTENT_TYPE, jsonMsg)
 		if err != nil {
 			log.Fatal(err)
 		}
 		time2 := time.Since(srvicetimer)
-		log.Println("Finished second call, checking results...")
+		log.Println("Finished load call, checking results...")
 		log.Println(resp)
 
 		var result2 map[string]interface{}
@@ -150,7 +150,7 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 			return res, err
 
 		} else {
-			log.Println("SUCCESSFUL SECOND CALL")
+			log.Println("SUCCESSFUL LOAD CALL")
 			jsonBytes = nil
 			resp = nil
 			res.Timer2 = time2
@@ -158,37 +158,31 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 
 			// ============ SECOND SERVICE CALL ============= //
 
-			log.Println("Creating second message")
+			log.Println("Creating EXTRACTION message")
+			// LOAD
 			requestmessage := map[string]interface{}{
-				"bucketName": bucket,
-				"bucktname":  bucket,
-				"filename":   fname,
-				"dbname":     DB,
-				"tablename":  TABLE,
-				"objectKey":  "loaded/" + DB,
+				"bucketname":    bucket,
+				"dbname":        result2["dbname"],
+				"tablename":     result2["tablename"],
+				"transactionid": uuid,
 			}
-			log.Println("request: ", requestmessage)
+
 			jsonBytes, err := json.Marshal(requestmessage)
 			if err != nil {
 				log.Fatal(err)
 			}
-			log.Println(jsonBytes)
 			var jsonMsg = bytes.NewBuffer(jsonBytes)
-			log.Println("jsonMsg:  ", jsonMsg)
-
-			log.Println("THIRD CALL MESSAGE:  ", jsonMsg)
-
 			log.Println("finished marshalling message into json")
-			log.Println(jsonMsg)
+			log.Println("EXTRACTION CALL MESSAGE:  ", jsonMsg)
 
 			srvicetimer := time.Now()
-			resp, err := http.Post(EXTRACTION_ENDPOINT, CONTENT_TYPE, jsonMsg)
+			resp, err := NetClient.Post(EXTRACTION_ENDPOINT, CONTENT_TYPE, jsonMsg)
 			if err != nil {
 				log.Fatal(err)
 			}
 			time3 := time.Since(srvicetimer)
 
-			log.Println("Finished third call, checking results...")
+			log.Println("Finished EXTRACTION call, checking results...")
 			log.Println(resp)
 
 			var result3 map[string]interface{}
@@ -197,7 +191,7 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 			log.Println(result3)
 
 			if false == result3["success"] {
-				log.Println("UNSUCCESSFUL SECOND CALL")
+				log.Println("UNSUCCESSFUL EXTRACTION CALL")
 				//TODO: Terminate program
 				res.Success = false
 				return res, err
@@ -207,14 +201,11 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 				res.Timer3 = time3
 				res.Success = true
 				res.RESP3 = result3
-
 			}
 
 		}
 
 	}
-
-	log.Println(resp)
 
 	//return Responses{Success: true, Bucket:bucket}, err
 
@@ -222,6 +213,11 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 	return res, err
 }
 
+func handleTransformRequest() {
+
+}
+
 func main() {
+
 	lambda.Start(HandleRequests)
 }
