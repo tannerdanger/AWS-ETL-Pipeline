@@ -29,9 +29,10 @@ Or use callservice.sh with the bucket name as param 1 and filename as param 2.
 {
   "success": true,
   "bucketname": "tcss562.project.tsb",
-  "input_filename": "100SalesRecords.csv",
-  "exported_filename": "outfile_100SalesRecords.csv",
+  "input_filename": "1000SalesRecords.csv",
+  "exported_filename": "/transformed/1000SalesRecords.csv",
   "error": "No Errors",
-  "deleted_duplicates": 3
+  "deleted_duplicates": 0,
+  "transactionid": "9f72637b-fd68-11e8-9f2c-a7be6afb8474"
 }
 ```
