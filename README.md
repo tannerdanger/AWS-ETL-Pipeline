@@ -1,13 +1,9 @@
-# Microservice controller:
-[controller](https://files.slack.com/files-pri/TDCHQBP63-FEKGWMWF9/image.png)
-
-
 # csv_lambda_func
 
-This project is intended as part of a series of microservices intended to be deployed to AWS Lambda. 
+This project is intended as part of a series of microservices intended to be deployed to AWS Lambda. It includes a microservice for manipulating and appending a CSV file, and a controller for calling all three microservices.
 
-## To Use:
-1. Compile the main go file: ``` go build -o main```
+## To Use CSV microservice:
+1. Upload the included main.zip file to lambda (and skip step 2) OR Compile the main go file: ``` go build -o main```
 2. zip and upload the main executable to your lambda function
 3. Test the function using this JSON as a configured test event. This same json format is also the expected input.
 ```JSON
@@ -36,3 +32,7 @@ Or use callservice.sh with the bucket name as param 1 and filename as param 2.
   "transactionid": "9f72637b-fd68-11e8-9f2c-a7be6afb8474"
 }
 ```
+## To Use Controller microservice:
+1. Modify the api endpoints in the controller.go file
+2. zip and upload the main executable to your lambda function
+3. Test the function using this JSON as a configured test event. This same json format is also the expected input.
