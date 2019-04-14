@@ -1,3 +1,8 @@
+/**
+* Tanner Brown
+* AWS Lambda function to retrieve data from a CVS file saved in S3, modify it,
+* and store it as a new CSV file to be loaded into a database
+*/
 package main
 
 import (
@@ -38,9 +43,6 @@ type Response struct {
 	RunTime int    `json:runtime`
 }
 
-//type Lambda struct {
-//	*client.Client
-//}
 
 func HandleRequest(ctx context.Context, req Request) (Response, error) {
 	var uuid = ""

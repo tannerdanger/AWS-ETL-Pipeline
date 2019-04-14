@@ -9,10 +9,10 @@ This project is intended as part of a series of microservices intended to be dep
 ```JSON
 {
   "bucketname": "tcss562.project.tsb",
-  "filename": "1000 Sales Records.csv"
+  "filename": "1000SalesRecords.csv"
 }
 ```
-Or use callservice.sh with the bucket name as param 1 and filename as param 2. 
+Or use callservice.sh with the bucket name as param 1 and filename as param 2.
 ```Bash
 ./callservice.sh tcss562.project.tsb 1000SalesRecords.csv
 ```

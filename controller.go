@@ -1,3 +1,9 @@
+/**
+* Tanner Brown
+* This file calls all 3 components of the ETL pipeline to test using one
+* single controller to call all 3 ETL services
+*/
+
 package main
 
 import (
@@ -74,6 +80,7 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 		"filename":   fname,
 		"requestid":  uuid,
 	}
+
 	jsonBytes, err := json.Marshal(requestmessage)
 
 	if err != nil {
@@ -211,10 +218,6 @@ func HandleRequests(ctx context.Context, req Requests) (Responses, error) {
 
 	//	return Responses{Success: false}, nil
 	return res, err
-}
-
-func handleTransformRequest() {
-
 }
 
 func main() {
